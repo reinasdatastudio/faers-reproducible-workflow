@@ -65,7 +65,7 @@ https://reinasdatastudio.github.io/webpage/
 レポートを実行する際は、FDAのWebサイトから対象四半期のデータファイルをダウンロードし、dataフォルダに配置してください。
 
 ## レポート
-[FAERSを用いた再現可能なファーマコビジランス解析ワークフローの構築](https://reinasdatastudio.github.io/faers-reproducible-workflow/FAERS2025Q3.html)
+[Reproducible Pharmacovigilance Workflow Using FAERS](https://reinasdatastudio.github.io/faers-reproducible-workflow/FAERS2025Q3.html)
 
 ## 概要
 
