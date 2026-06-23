@@ -1,0 +1,303 @@
+---
+title: "original-code for Reproducible Pharmacovigilance Workflow Using FAERS"
+author: "Reina Kaino"
+date: "2026-06-23"
+format: gfm
+---
+
+```{r include=FALSE}
+library(data.table)
+library(tidyverse)
+library(scales)
+library(knitr)
+```
+
+## REAC Table Overview
+
+```{r}
+#| tbl-cap: REAC table
+reac <- fread(
+  "data/REAC25Q3.txt",
+  sep="$",
+  quote = "",
+  fill = TRUE,
+  encoding = "UTF-8"
+)
+
+kable(head(reac))
+```
+
+```{r include=FALSE}
+colnames(reac)
+```
+
+### REAC Data Preparation
+
+Data exploration of REAC table.
+
+```{r}
+# Number of rows in REAC table
+nrow(reac)
+```
+
+```{r}
+# How many primary IDs are in the table
+length(unique(reac$primaryid))
+```
+
+```{r}
+# How many unique case IDs are there
+length(unique(reac$caseid))
+```
+
+#### Remove duplicate rows
+
+```{r}
+#Remove `primaryid`
+reac_new <- select(reac, -"primaryid")
+```
+
+```{r}
+#Remove duplicate rows
+reac_new <- reac_new %>%
+  distinct()
+```
+
+#### Check for missing data
+
+```{r}
+#| tbl-cap: Check for missing data
+kable(reac_new %>%   summarise(across(c(caseid, pt), ~sum(is.na(.)))))
+```
+
+### REAC Data Analysis
+
+#### Frequency of reactions per case
+
+```{r}
+reac_per_case <- reac_new %>%
+  distinct(caseid, pt) %>%
+  count(caseid, name = "Number of reaction")
+#Same as reac_per_case <- reac |> dplyr::count(primaryid)
+```
+
+```{r}
+#Count the number of reactions per case (E.g. 100 cases have 1 reaction etc.) 
+reac_count <- reac_per_case %>% count(`Number of reaction`) %>% rename(num_reactions = `Number of reaction`, num_cases = n)
+kable(head(reac_count, 5))
+```
+
+```{r}
+#Summary of number of reactions
+summary(reac_per_case$`Number of reaction`)
+```
+
+```{r}
+#IQR of number of reactions
+IQR(reac_per_case$`Number of reaction`)
+```
+
+```{r echo=FALSE}
+#| fig.cap: "Figure 2: Histogram of count of Number of Reactions"
+
+ggplot(reac_per_case, aes(`Number of reaction`)) +
+  geom_histogram(binwidth = 1) +
+  theme_minimal()
+```
+
+
+```{r include=FALSE}
+length(unique(reac_new$pt))
+```
+
+
+#### Frequently Reported Reaction Terms
+
+
+```{r}
+top_pt <- reac_new %>%
+  count(pt) %>%
+  arrange(desc(n)) %>%
+  rename(`Count` = n) %>%
+  slice(1:10)
+kable(top_pt)
+```
+
+```{r}
+#| fig.cap: "Figure 3: A bar graph of top 15 pt terms"
+ggplot(top_pt, aes(x = reorder(pt, -Count), y = Count)) +
+  geom_col() +
+  labs(x="pt") +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1), panel.background = element_blank())
+
+```
+
+## OUTC Table Overview
+
+```{r}
+#| tbl-cap: Convert OUTC25Q3.txt to a table
+
+outc <- fread(
+  "data/OUTC25Q3.txt",
+  sep="$",
+  quote = "",
+  fill = TRUE,
+  encoding = "UTF-8"
+)
+
+kable(head(outc))
+```
+
+
+### OUTC Data Preparation
+
+```{r}
+#| tbl-cap: Checking for any missing data
+
+knitr::kable(head(outc %>%
+  summarise(across(c(primaryid, caseid, outc_cod), ~sum(is.na(.))))))
+```
+
+```{r}
+#Remove `primaryid` and any duplicate rows
+outc_cleaned <- outc %>%
+  distinct() %>%
+  select(-primaryid)
+```
+
+### OUTC Data Analysis
+
+```{r}
+#| tbl-cap: Count of Outcome Code
+top_outc <- outc_cleaned %>%
+  count(outc_cod) %>%
+  arrange(desc(n))
+kable(top_outc)
+```
+
+```{r echo=FALSE}
+#| fig.cap: "Figure 4: Bar graph for easier visualisation"
+
+ggplot(top_outc, aes(reorder(x=outc_cod, -n), y=n)) +
+  geom_col() +
+  labs(x = "Outcome Code", y = "Count") +
+  theme_minimal()
+```
+
+
+```{r}
+#| fig.cap: "Figure 5: Categorising Severity of Outcome and the total count of each severity"
+
+outc_serious <- outc_cleaned %>%
+  filter(outc_cod == "DE" | outc_cod == "LT")
+
+outc_moderate <- outc_cleaned %>%
+  filter(outc_cod == "HO")
+
+outc_non_serious <- filter(outc_cleaned, outc_cod %in% c("OT", "DS", "CA", "RI"))
+
+
+# Combine into a summary data frame for plotting
+outc_category_count <- data.frame(
+  category = c("Serious", "Moderate", "Non-Serious"),
+  total_count = c(nrow(outc_serious), nrow(outc_moderate), nrow(outc_non_serious))
+)
+
+ggplot(outc_category_count, aes(reorder(x=category, -total_count), y=total_count)) +
+  geom_col() +
+  labs(x = "Category", y = "Count") +
+  theme_minimal()
+```
+
+### Combining REAC and OUTC Tables
+
+```{r}
+#| tbl-cap: Summarised REAC table
+
+reac_summary <- data.table(
+  caseid = reac_per_case$caseid,
+  n_reactions = reac_per_case$`Number of reaction`,
+  five_or_more_reactions = reac_per_case$`Number of reaction` >= 5
+)
+
+kable(head(reac_summary, 10))
+```
+
+```{r}
+#| tbl-cap: Summarised OUTC table
+
+#Categorise cases
+outc_serious$Severity <- "Severe"
+outc_moderate$Severity <- "Moderate"
+outc_non_serious$Severity <- "Non-Serious"
+
+outc_summary <- bind_rows(outc_serious, outc_moderate, outc_non_serious)
+
+kable(head(outc_summary, 10))
+```
+
+```{r}
+#| tbl-cap: Combining Reaction and Outcome Summary Table
+
+reac_outc <- reac_summary %>%
+  left_join(outc_summary, by = "caseid")
+
+kable(head(reac_outc, 15))
+```
+
+```{r}
+#| tbl-cap: Check for missing data
+
+kable(reac_outc %>%
+  summarise(across(c(caseid, outc_cod, Severity, n_reactions, five_or_more_reactions), ~sum(is.na(.)))))
+```
+
+```{r}
+#| fig.cap: "Figure 6: A bar graph visualising the severity of adverse reactions"
+
+ggplot(reac_outc, aes(x = Severity)) +
+  geom_bar() +
+  theme_minimal()
+```
+
+```{r}
+kable(reac_outc %>%
+  count(Severity) %>%
+  mutate(percentage = n / sum(n) * 100))
+```
+
+```{r}
+#| fig.cap: "Figure 7: A histogram showing how many cases reported what number of reactions, coloured with severity"
+
+ggplot(reac_outc, aes(x = n_reactions, fill = Severity)) +
+  geom_histogram(binwidth = 1, position = "identity", alpha = 0.6) +
+  labs(
+    title = "Number of Adverse Reactions per Case",
+    x = "Number of reactions reported per case",
+    y = "Number of cases",
+    fill = "Max severity"
+  ) +
+  theme_minimal()
+```
+
+```{r}
+
+#| fig.cap: "Figure 8: Severe outcomes by number of reported reactions"
+
+plot_data <- reac_outc %>%
+  group_by(five_or_more_reactions) %>%
+  summarise(
+    n_cases = n(),
+    n_severe = sum(Severity == "Severe", na.rm = TRUE),
+    prop_severe = n_severe / n_cases
+  )
+
+ggplot(plot_data, aes(x = five_or_more_reactions, y = prop_severe)) +
+  geom_col(fill = "#ddf", width = 0.6) +
+  scale_y_continuous(labels = percent_format(accuracy = 1)) +
+  labs(
+    x = "Five or more cases reported",
+    y = "Proportion with death or life-threatening case"
+  ) +
+  theme_minimal(base_size = 13)
+```

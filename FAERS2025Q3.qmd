@@ -1,0 +1,524 @@
+---
+title: "Reproducible Pharmacovigilance Workflow Using FAERS"
+author: "Reina Kaino"
+date: "2025-12-21"
+format:
+  html:
+    theme: cosmo
+    page-layout: article
+    code-fold: true
+    toc: true
+    toc-location: right
+    cap-location: bottom
+    include-after-body: footer.html
+---
+
+```{r include=FALSE}
+library(data.table)
+library(tidyverse)
+library(scales)
+library(knitr)
+```
+
+## Executive Summary
+
+This project demonstrates a reproducible workflow for exploratory pharmacovigilance analysis using the FDA Adverse Event Reporting System (FAERS) 2025 Q3 dataset.
+
+Using structured R scripts and case-level aggregation, I examined:
+
+- Frequently reported adverse reaction terms
+- Case-level reporting patterns
+- Data structure and duplication considerations
+
+This analysis is exploratory and intended for structured signal awareness rather than causal inference.
+
+This case study reflects how I structure large healthcare datasets with clarity, traceability and cautious interpretation.
+
+## Analytical Objective
+
+To examine reporting patterns in FAERS 2025 Q3 data by combining:
+
+• Reaction reporting behaviour (REAC table)\
+• Outcome severity indicators (OUTC table)
+
+The goal is exploratory signal awareness using case-level aggregation, not estimation of clinical risk.
+
+## Context
+
+Spontaneous adverse event databases such as FAERS contain large volumes of real-world safety reports.\
+However, these data are frequently misinterpreted because reporting frequency is influenced by awareness, reporting behaviour, and follow-up submissions rather than true incidence.
+
+For healthcare and research teams, the practical value of FAERS lies in structured signal awareness rather than causal inference.
+
+This project explores how reporting patterns can be examined cautiously using a reproducible R workflow.
+
+## Data Source
+
+- \[FAERS public dataset (FDA)\](<https://fis.fda.gov/extensions/FPD-QDE-FAERS/FPD-QDE-FAERS.html>)
+- Reporting is voluntary
+- Data includes duplicates and reporting bias
+
+The most recent data as of current date was downloaded and used. The faers_ascii_2025q3.zip was downloaded from the official United States government website.
+
+The folder includes seven .txt files:
+
+- DEMO25Q3.txt (Demographics)
+- DRUG25Q3.txt (Drug)
+- INDI25Q3.txt (Indication)
+- OUTC25Q3.txt (Outcome)
+- REAC25Q3.txt (Reaction)
+- RPSR25Q3.txt (Report_Sources)
+- THER25Q3.txt (Therapy)
+
+[![Figure 1: ASCII Entity Relationship Diagram (ERD)](images/pdf-image.png){style="text-align: center"}](FAERS/ASC_NTS.pdf)
+
+This analysis uses the FDA Adverse Event Reporting System (FAERS) public dataset, specifically the REAC and OUTC table from 2025 Q3.
+
+The REAC table contains adverse reaction terms reported for individual case reports. Each row represents a reported reaction linked to a case identifier (`primaryid`).
+
+The OUTC table contains patient outcome information for each adverse event report, indicating the result of the event (Such as death, hospitalisation etc.)
+
+## Data and Structural Consideration
+
+It is important to note that FAERS data is based on spontaneous reports and does not represent confirmed adverse drug reactions.
+
+Several limitations must be considered when interpreting FAERS adverse reaction data such as:
+
+- A single case may include multiple reported reactions
+- Reporting frequency does not equal incidence or risk
+- Duplicate or follow-up reports may exist
+- Reporting is influenced by media attention and regulatory actions
+
+As a result, counts and trends should be interpreted cautiously and used for signal exploration rather than causal inference.
+
+**Important:**\
+This analysis is exploratory and does not imply causality.
+
+All analyses were conducted at the case level (`caseid`) to reduce over-counting from follow-up submissions.
+
+## Reproducible Workflow
+
+To ensure traceability and repeatability, the analysis was performed using a scripted workflow in R rather than manual data manipulation.
+
+The workflow consisted of:
+
+- Importing raw FAERS ASCII files directly into R
+- Performing case-level aggregation to avoid double counting follow-up reports
+- Applying cleaning and transformation steps through documented code
+- Generating tables and figures automatically from the analysis script
+
+This approach ensures the results can be regenerated whenever the dataset is updated and provides a clear audit trail of all processing steps.
+
+## Analytical Approach
+
+The analysis is structured in two complementary parts.
+
+First, the REAC table is used to understand what types of reactions are most frequently reported and how reports are distributed across cases.
+
+Second, the OUTC table is used to examine how serious those reported cases are.
+
+Together, these perspectives allow cautious interpretation:\
+frequently reported events are not necessarily severe, and severe outcomes are not necessarily frequent.
+
+## REAC Table Overview
+
+```{r}
+#| tbl-cap: REAC table
+reac <- fread(
+  "data/REAC25Q3.txt",
+  sep="$",
+  quote = "",
+  fill = TRUE,
+  encoding = "UTF-8"
+)
+
+kable(head(reac))
+```
+
+```{r include=FALSE}
+colnames(reac)
+```
+
+Key variables include:
+
+- `primaryid`: Unique identifier for each case report
+- `pt`: Preferred Term describing the adverse reaction (MedDRA)
+- `caseid`: Case-level identifier
+- `drug_rec_act`: Drug Recur Action Data if the adverse reaction reappears upon re-administration of the drug.
+
+### REAC Data Preparation
+
+Data exploration of REAC table.
+
+```{r}
+# Number of rows in REAC table
+nrow(reac)
+```
+
+```{r}
+# How many primary IDs are in the table
+length(unique(reac$primaryid))
+```
+
+```{r}
+# How many unique case IDs are there
+length(unique(reac$caseid))
+```
+
+"How many adverse reaction terms are reported per case?"
+
+In the 25Q3 version the number of `caseid` are the same as the number of `primaryid`, but for the purpose of clarification, as FAERS cases may include multiple report versions due to follow-up submissions, analyses in this report are conducted at the case level (`caseid`) to avoid over-counting reactions associated with report updates.
+
+#### Remove duplicate rows
+
+```{r}
+#Remove `primaryid`
+reac_new <- select(reac, -"primaryid")
+```
+
+```{r}
+#Remove duplicate rows
+reac_new <- reac_new %>%
+  distinct()
+```
+
+#### Check for missing data
+
+```{r}
+#| tbl-cap: Check for missing data
+kable(reac_new %>%   summarise(across(c(caseid, pt), ~sum(is.na(.)))))
+```
+
+No missing data observed in `caseid` and `pt`.
+
+### REAC Data Analysis
+
+#### Frequency of reactions per case
+
+Count how many cases have n number of adverse reactions.
+
+```{r}
+reac_per_case <- reac_new %>%
+  distinct(caseid, pt) %>%
+  count(caseid, name = "Number of reaction")
+#Same as reac_per_case <- reac |> dplyr::count(primaryid)
+```
+
+```{r}
+#Count the number of reactions per case (E.g. 100 cases have 1 reaction etc.) 
+reac_count <- reac_per_case %>% count(`Number of reaction`) %>% rename(num_reactions = `Number of reaction`, num_cases = n)
+kable(head(reac_count, 5))
+```
+
+```{r}
+#Summary of number of reactions
+summary(reac_per_case$`Number of reaction`)
+```
+
+```{r}
+#IQR of number of reactions
+IQR(reac_per_case$`Number of reaction`)
+```
+
+```{r echo=FALSE}
+#| fig.cap: "Figure 2: Histogram of count of Number of Reactions"
+
+ggplot(reac_per_case, aes(`Number of reaction`)) +
+  geom_histogram(binwidth = 1) +
+  theme_minimal()
+```
+
+#### Reaction Reporting Behaviour
+
+Most cases report only a small number of reaction terms, with a long tail of multi-reaction cases.\
+This reflects reporting behaviour rather than clinical complexity alone.
+
+The median number of reported reactions per case is low, indicating that single-event reporting is common in spontaneous submissions.
+
+```{r include=FALSE}
+length(unique(reac_new$pt))
+```
+
+As expected, the number of cases decreases as the number of adverse reactions increase. About a quarter of the cases only had one adverse events, with median of 2 pts per case, suggesting that single-event reporting is common.
+
+#### Frequently Reported Reaction Terms
+
+The following table summarises the most frequently reported preferred terms in the dataset.\
+These represent reporting concentration rather than confirmed drug risk.
+
+```{r}
+top_pt <- reac_new %>%
+  count(pt) %>%
+  arrange(desc(n)) %>%
+  rename(`Count` = n) %>%
+  slice(1:10)
+kable(top_pt)
+```
+
+```{r}
+#| fig.cap: "Figure 3: A bar graph of top 15 pt terms"
+ggplot(top_pt, aes(x = reorder(pt, -Count), y = Count)) +
+  geom_col() +
+  labs(x="pt") +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1), panel.background = element_blank())
+
+```
+
+### Outcome Severity Perspective (OUTC)
+
+Reaction frequency alone cannot indicate clinical importance.\
+To add context, outcome information is examined to understand how serious reported cases are.
+
+While REAC shows what is reported, OUTC shows the consequence of those reports.
+
+## OUTC Table Overview
+
+Now we will look at the OUTC25Q3.txt file to find the distribution of the severity of adverse effects.
+
+```{r}
+#| tbl-cap: Convert OUTC25Q3.txt to a table
+
+outc <- fread(
+  "data/OUTC25Q3.txt",
+  sep="$",
+  quote = "",
+  fill = TRUE,
+  encoding = "UTF-8"
+)
+
+kable(head(outc))
+```
+
+Key variables include:
+
+- `primaryid`: Unique identifier for each case report
+- `caseid`: Case-level identifier.
+- `outc_cod`: Code of the outcome
+  - DE = Death
+  - LT = Life-threatening
+  - HO = Hospitalisation
+  - DS = Disability
+  - CA = Congenital anomaly
+  - RI = Required intervention
+  - OT = Other
+
+### OUTC Data Preparation
+
+```{r}
+#| tbl-cap: Checking for any missing data
+
+knitr::kable(head(outc %>%
+  summarise(across(c(primaryid, caseid, outc_cod), ~sum(is.na(.))))))
+```
+
+```{r}
+#Remove `primaryid` and any duplicate rows
+outc_cleaned <- outc %>%
+  distinct() %>%
+  select(-primaryid)
+```
+
+### OUTC Data Analysis
+
+```{r}
+#| tbl-cap: Count of Outcome Code
+top_outc <- outc_cleaned %>%
+  count(outc_cod) %>%
+  arrange(desc(n))
+kable(top_outc)
+```
+
+```{r echo=FALSE}
+#| fig.cap: "Figure 4: Bar graph for easier visualisation"
+
+ggplot(top_outc, aes(reorder(x=outc_cod, -n), y=n)) +
+  geom_col() +
+  labs(x = "Outcome Code", y = "Count") +
+  theme_minimal()
+```
+
+Total of 34,803 deaths, possibly caused by drugs, is an astonishing number considering this data is only one quarter of a year.
+
+As the codes are quite broad, we cannot determine what exactly "Others" is, but according to the FAERS document it is all important medical event. "Requiring intervention" (To Prevent Permanent Impairment/Damage) scored the lowest which indicates most of the adverse effects are unpreventable, or are unnoticed before it is too late.
+
+The number of "Deaths" are well above the adverse effect of 19,165 in the REAC table - The reason possibly being because there may had been other side effects and those who submitted the data had interpreted Death as the outcome, instead of an adverse effect.
+
+There is no clear cut as to what is categorised as serious and what is not, but for the purpose of this report, DE and LT will be categorised as "Serious", HO as "Moderate" and others as "Non-serious".
+
+```{r}
+#| fig.cap: "Figure 5: Categorising Severity of Outcome and the total count of each severity"
+
+outc_serious <- outc_cleaned %>%
+  filter(outc_cod == "DE" | outc_cod == "LT")
+
+outc_moderate <- outc_cleaned %>%
+  filter(outc_cod == "HO")
+
+outc_non_serious <- filter(outc_cleaned, outc_cod %in% c("OT", "DS", "CA", "RI"))
+
+
+# Combine into a summary data frame for plotting
+outc_category_count <- data.frame(
+  category = c("Serious", "Moderate", "Non-Serious"),
+  total_count = c(nrow(outc_serious), nrow(outc_moderate), nrow(outc_non_serious))
+)
+
+ggplot(outc_category_count, aes(reorder(x=category, -total_count), y=total_count)) +
+  geom_col() +
+  labs(x = "Category", y = "Count") +
+  theme_minimal()
+```
+
+### Combining REAC and OUTC Tables
+
+```{r}
+#| tbl-cap: Summarised REAC table
+
+reac_summary <- data.table(
+  caseid = reac_per_case$caseid,
+  n_reactions = reac_per_case$`Number of reaction`,
+  five_or_more_reactions = reac_per_case$`Number of reaction` >= 5
+)
+
+kable(head(reac_summary, 10))
+```
+
+```{r}
+#| tbl-cap: Summarised OUTC table
+
+#Categorise cases
+outc_serious$Severity <- "Severe"
+outc_moderate$Severity <- "Moderate"
+outc_non_serious$Severity <- "Non-Serious"
+
+outc_summary <- bind_rows(outc_serious, outc_moderate, outc_non_serious)
+
+kable(head(outc_summary, 10))
+```
+
+```{r}
+#| tbl-cap: Combining Reaction and Outcome Summary Table
+
+reac_outc <- reac_summary %>%
+  left_join(outc_summary, by = "caseid")
+
+kable(head(reac_outc, 15))
+```
+
+```{r}
+#| tbl-cap: Check for missing data
+
+kable(reac_outc %>%
+  summarise(across(c(caseid, outc_cod, Severity, n_reactions, five_or_more_reactions), ~sum(is.na(.)))))
+```
+
+Many of the cases has missing outcomes - This shows the realness of data gathering; as the outcome reporting is optional many cases will report reactions caused by drugs only. Because this is an important part of the analysis, the missing values are (By R default) included as "NA". i.e. No outcome recorded.
+
+```{r}
+#| fig.cap: "Figure 6: A bar graph visualising the severity of adverse reactions"
+
+ggplot(reac_outc, aes(x = Severity)) +
+  geom_bar() +
+  theme_minimal()
+```
+
+```{r}
+kable(reac_outc %>%
+  count(Severity) %>%
+  mutate(percentage = n / sum(n) * 100))
+```
+
+Only 65.1% of FAERS cases report outcome data. Severity analyses therefore reflect a subset of reports and may underestimate true risk.
+
+```{r}
+#| fig.cap: "Figure 7: A histogram showing how many cases reported what number of reactions, coloured with severity"
+
+ggplot(reac_outc, aes(x = n_reactions, fill = Severity)) +
+  geom_histogram(binwidth = 1, position = "identity", alpha = 0.6) +
+  labs(
+    title = "Number of Adverse Reactions per Case",
+    x = "Number of reactions reported per case",
+    y = "Number of cases",
+    fill = "Max severity"
+  ) +
+  theme_minimal()
+```
+
+```{r}
+
+#| fig.cap: "Figure 8: Severe outcomes by number of reported reactions"
+
+plot_data <- reac_outc %>%
+  group_by(five_or_more_reactions) %>%
+  summarise(
+    n_cases = n(),
+    n_severe = sum(Severity == "Severe", na.rm = TRUE),
+    prop_severe = n_severe / n_cases
+  )
+
+ggplot(plot_data, aes(x = five_or_more_reactions, y = prop_severe)) +
+  geom_col(fill = "#ddf", width = 0.6) +
+  scale_y_continuous(labels = percent_format(accuracy = 1)) +
+  labs(
+    x = "Five or more cases reported",
+    y = "Proportion with death or life-threatening case"
+  ) +
+  theme_minimal(base_size = 13)
+```
+
+Although the difference is subtle, cases reporting five or more adverse reactions show a higher proportion of severe outcomes (death or life-threatening reactions) compared with cases reporting fewer reactions.
+
+## Interpretation
+
+Combining reaction frequency and outcome severity provides a more cautious understanding of FAERS data.
+
+Frequently reported reactions do not necessarily correspond to severe outcomes, and serious outcomes may occur in less frequently reported terms.
+
+This demonstrates why spontaneous reporting databases should be used for signal awareness and prioritisation rather than risk estimation.
+
+### Clinical Context
+
+It is very important to keep in mind that these are all real-life data with many missing values and errors. It is not possible to know where there may be errors, but a few possibilities include:
+
+- Error submitting an update as a new case
+- Entry error
+- Multiple drug administration by one patient leading to identifying the wrong drug as the culprit of adverse reactions
+
+While there are many possible errors to keep in mind, the data has a huge number of cases reported. Larger reporting volume may reveal consistent patterns, but does not remove reporting bias. An increase in reports does not necessarily indicate increased risk. Possible contributions to the bias include:
+
+- Increased prescribing
+- Media attention
+- Regulatory changes
+
+The results should be read and analysed with the potential errors and influences in mind, and any healthcare professionals or researchers who intend to use this as reference should always use their clinical judgement.
+
+### Key Findings
+
+- Reporting frequency is concentrated in a small subset of reaction terms
+- Most cases contain a limited number of reported reactions
+- Serious outcomes occur across both frequent and infrequent terms
+- Reaction frequency alone does not indicate clinical severity
+
+## Potential Use Cases
+
+This type of analysis could support:
+
+- Pharmacovigilance signal review
+- Internal safety discussions
+- Educational summaries
+
+## Conclusion
+
+This case study demonstrates a reproducible approach to structuring and interpreting large pharmacovigilance datasets in R.
+
+By separating reaction frequency from outcome severity and analysing data at the case level, reporting patterns can be explored while maintaining appropriate clinical caution.
+
+Such workflows support exploratory safety assessment and communication, but should not be interpreted as evidence of causality or incidence.
+
+## About the Author
+
+I am a former pharmacist specialising in R-based data analysis for healthcare and research.
+
+I support projects in **English and Japanese**.
+
+If you need structured analysis of datasets using reproducible R workflows, feel free to get in touch.
