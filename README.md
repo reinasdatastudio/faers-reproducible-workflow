@@ -9,7 +9,7 @@
 Data files are not included.
 Download the relevant quarterly files from the FDA website and place them in the data folder before rendering the report.
 
-## Full report:
+### Full report
 [Reproducible Pharmacovigilance Workflow Using FAERS](https://reinasdatastudio.github.io/faers-reproducible-workflow/FAERS2025Q3.html)
 
 ## Overview
@@ -64,7 +64,7 @@ https://reinasdatastudio.github.io/webpage/
 データファイルは本リポジトリには含まれていません。
 レポートを実行する際は、FDAのWebサイトから対象四半期のデータファイルをダウンロードし、dataフォルダに配置してください。
 
-## レポート
+### レポート
 [Reproducible Pharmacovigilance Workflow Using FAERS](https://reinasdatastudio.github.io/faers-reproducible-workflow/FAERS2025Q3.html)
 
 ## 概要
